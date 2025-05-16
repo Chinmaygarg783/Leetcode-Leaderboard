@@ -1,66 +1,51 @@
 import streamlit as st
 import json
-from datetime import datetime, timedelta
-
-DATA_FILE = "data.json"
-POINTS = {"easy": 1, "medium": 3, "hard": 5}
+import datetime
 
 def load_data():
-    with open(DATA_FILE, "r") as f:
+    with open("data.json", "r") as f:
         return json.load(f)
 
-def compute_today_stats(data):
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
-    today_stats = {}
+def get_stats_by_range(data, days_back):
+    today = datetime.date.today()
+    cutoff = today - datetime.timedelta(days=days_back)
 
-    if today in data and yesterday in data:
-        for user in data[today]:
-            today_stats[user] = {
-                diff: data[today][user][diff] - data[yesterday].get(user, {}).get(diff, 0)
-                for diff in POINTS
-            }
-    return today_stats
+    delta_stats = []
+    for user, info in data.items():
+        history = info.get("history", [])
+        today_solved = None
+        past_solved = None
 
-def compute_weekly_stats(data):
-    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
-    today = datetime.utcnow().strftime("%Y-%m-%d")
-    week_stats = {}
+        for entry in reversed(history):
+            date = datetime.date.fromisoformat(entry["date"])
+            if date == today:
+                today_solved = entry["solved"]
+            if date == cutoff:
+                past_solved = entry["solved"]
 
-    for date in data:
-        if week_ago <= date <= today:
-            for user in data[date]:
-                if user not in week_stats:
-                    week_stats[user] = {k: 0 for k in POINTS}
-                for diff in POINTS:
-                    week_stats[user][diff] += data[date][user][diff]
-    return week_stats
+        if today_solved is not None and past_solved is not None:
+            delta_stats.append((user, today_solved - past_solved))
 
-def calculate_points(stats):
-    return {
-        user: sum(count * POINTS[diff] for diff, count in stat.items())
-        for user, stat in stats.items()
-    }
+    delta_stats.sort(key=lambda x: x[1], reverse=True)
+    return delta_stats
 
+st.title("Leetcode Leaderboard")
+
+mode = st.radio("Select Ranking Mode", ["All-Time", "Weekly", "Daily"])
 data = load_data()
-today_stats = compute_today_stats(data)
-weekly_stats = compute_weekly_stats(data)
 
-today_points = calculate_points(today_stats)
-weekly_points = calculate_points(weekly_stats)
+if mode == "All-Time":
+    all_time = [(user, info["history"][-1]["solved"]) for user, info in data.items()]
+    all_time.sort(key=lambda x: x[1], reverse=True)
+    st.write("### All-Time Leaderboard")
+    st.table(all_time)
 
-st.title("📊 LeetCode Leaderboard")
+elif mode == "Weekly":
+    weekly = get_stats_by_range(data, 7)
+    st.write("### Weekly Leaderboard")
+    st.table(weekly)
 
-st.header("🏆 Today's Ranking")
-today_sorted = sorted(today_points.items(), key=lambda x: x[1], reverse=True)
-for i, (user, points) in enumerate(today_sorted, 1):
-    st.write(f"**{i}. {user}** — {points} pts")
-
-st.header("📈 Weekly Ranking")
-weekly_sorted = sorted(weekly_points.items(), key=lambda x: x[1], reverse=True)
-for i, (user, points) in enumerate(weekly_sorted, 1):
-    st.write(f"**{i}. {user}** — {points} pts")
-
-st.header("📅 Problems Solved Today")
-for user, stats in today_stats.items():
-    st.write(f"**{user}**: {stats}")
+elif mode == "Daily":
+    daily = get_stats_by_range(data, 1)
+    st.write("### Daily Leaderboard")
+    st.table(daily)
