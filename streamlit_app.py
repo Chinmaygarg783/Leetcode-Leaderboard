@@ -1,95 +1,66 @@
-
 import streamlit as st
-import pandas as pd
-import requests
 import json
 from datetime import datetime, timedelta
 
-DRIVE_FILE = "data.json"
+DATA_FILE = "data.json"
+POINTS = {"easy": 1, "medium": 3, "hard": 5}
 
-def fetch_user_stats(username):
-    url = 'https://leetcode.com/graphql'
-    query = '''
-    query getUserProfile($username: String!) {
-      matchedUser(username: $username) {
-        submitStats {
-          acSubmissionNum {
-            difficulty
-            count
-          }
-        }
-      }
-    }
-    '''
-    response = requests.post(url, json={'query': query, 'variables': {'username': username}})
-    stats = response.json()['data']['matchedUser']['submitStats']['acSubmissionNum']
-    return {
-        'easy': next(s['count'] for s in stats if s['difficulty'] == 'Easy'),
-        'medium': next(s['count'] for s in stats if s['difficulty'] == 'Medium'),
-        'hard': next(s['count'] for s in stats if s['difficulty'] == 'Hard')
-    }
-
-@st.cache_data
-def load_snapshot():
-    with open(DRIVE_FILE, "r") as f:
+def load_data():
+    with open(DATA_FILE, "r") as f:
         return json.load(f)
 
-st.title("🏆 LeetCode Leaderboard")
+def compute_today_stats(data):
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_stats = {}
 
-if "users" not in st.session_state:
-    st.session_state.users = ["user1", "user2"]
+    if today in data and yesterday in data:
+        for user in data[today]:
+            today_stats[user] = {
+                diff: data[today][user][diff] - data[yesterday].get(user, {}).get(diff, 0)
+                for diff in POINTS
+            }
+    return today_stats
 
-user_input = st.text_input("Add LeetCode Username:")
-if st.button("Add User") and user_input:
-    if user_input not in st.session_state.users:
-        st.session_state.users.append(user_input)
+def compute_weekly_stats(data):
+    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    week_stats = {}
 
-remove_user = st.selectbox("Remove a user:", [""] + st.session_state.users)
-if st.button("Remove User") and remove_user:
-    st.session_state.users.remove(remove_user)
+    for date in data:
+        if week_ago <= date <= today:
+            for user in data[date]:
+                if user not in week_stats:
+                    week_stats[user] = {k: 0 for k in POINTS}
+                for diff in POINTS:
+                    week_stats[user][diff] += data[date][user][diff]
+    return week_stats
 
-snapshot = load_snapshot()
-today_str = datetime.utcnow().strftime('%Y-%m-%d')
-week_ago = (datetime.utcnow() - timedelta(days=7)).strftime('%Y-%m-%d')
-
-leaderboard = []
-week_stats = []
-
-for user in st.session_state.users:
-    today_stats = fetch_user_stats(user)
-    prev_day = snapshot.get(today_str, {}).get(user, {"easy": 0, "medium": 0, "hard": 0})
-    week_start = snapshot.get(week_ago, {}).get(user, {"easy": 0, "medium": 0, "hard": 0})
-
-    today_diff = {
-        'easy': today_stats['easy'] - prev_day['easy'],
-        'medium': today_stats['medium'] - prev_day['medium'],
-        'hard': today_stats['hard'] - prev_day['hard']
+def calculate_points(stats):
+    return {
+        user: sum(count * POINTS[diff] for diff, count in stat.items())
+        for user, stat in stats.items()
     }
-    today_total = sum(v for v in today_diff.values())
-    today_score = today_diff['easy'] * 1 + today_diff['medium'] * 3 + today_diff['hard'] * 5
 
-    week_total = (
-        (today_stats['easy'] - week_start['easy']) +
-        (today_stats['medium'] - week_start['medium']) +
-        (today_stats['hard'] - week_start['hard'])
-    )
+data = load_data()
+today_stats = compute_today_stats(data)
+weekly_stats = compute_weekly_stats(data)
 
-    leaderboard.append({
-        "Username": user,
-        "Easy": today_diff['easy'],
-        "Medium": today_diff['medium'],
-        "Hard": today_diff['hard'],
-        "Total Solved Today": today_total,
-        "Score Today": today_score
-    })
+today_points = calculate_points(today_stats)
+weekly_points = calculate_points(weekly_stats)
 
-    week_stats.append({
-        "Username": user,
-        "Total Solved This Week": week_total
-    })
+st.title("📊 LeetCode Leaderboard")
 
-st.subheader("📅 Daily Leaderboard (Weighted Score)")
-st.dataframe(pd.DataFrame(leaderboard).sort_values("Score Today", ascending=False).reset_index(drop=True))
+st.header("🏆 Today's Ranking")
+today_sorted = sorted(today_points.items(), key=lambda x: x[1], reverse=True)
+for i, (user, points) in enumerate(today_sorted, 1):
+    st.write(f"**{i}. {user}** — {points} pts")
 
-st.subheader("🗓️ Weekly Leaderboard (Total Questions Solved)")
-st.dataframe(pd.DataFrame(week_stats).sort_values("Total Solved This Week", ascending=False).reset_index(drop=True))
+st.header("📈 Weekly Ranking")
+weekly_sorted = sorted(weekly_points.items(), key=lambda x: x[1], reverse=True)
+for i, (user, points) in enumerate(weekly_sorted, 1):
+    st.write(f"**{i}. {user}** — {points} pts")
+
+st.header("📅 Problems Solved Today")
+for user, stats in today_stats.items():
+    st.write(f"**{user}**: {stats}")
