@@ -1,39 +1,35 @@
 import json
-import requests
-from datetime import datetime
-
-# ✅ Replace these with your actual LeetCode usernames
-USERS = [
-    "your_friend1",
-    "your_friend2",
-    "your_username"
-]
-
-LEETCODE_API = "https://leetcode-stats-api.herokuapp.com/{}"
+import datetime
+from fetch_leetcode_data import get_user_stats  # Assuming you have a function for this
 
 DATA_FILE = "data.json"
 
-# Load existing data
-try:
-    with open(DATA_FILE, "r") as f:
-        data = json.load(f)
-except FileNotFoundError:
-    data = {}
+def load_data():
+    try:
+        with open(DATA_FILE, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return {}
 
-today = datetime.utcnow().strftime("%Y-%m-%d")
-data[today] = {}
+def save_data(data):
+    with open(DATA_FILE, "w") as f:
+        json.dump(data, f, indent=2)
 
-for username in USERS:
-    url = LEETCODE_API.format(username)
-    r = requests.get(url)
-    if r.status_code == 200:
-        stats = r.json()
-        data[today][username] = {
-            "easy": stats.get("easySolved", 0),
-            "medium": stats.get("mediumSolved", 0),
-            "hard": stats.get("hardSolved", 0)
-        }
+def update_snapshot():
+    today = str(datetime.date.today())
+    data = load_data()
 
-# Save updated data
-with open(DATA_FILE, "w") as f:
-    json.dump(data, f, indent=2)
+    for username in data:
+        stats = get_user_stats(username)
+        today_count = stats.get("solved_problems", 0)
+
+        # Append today's snapshot if not already present
+        history = data[username].get("history", [])
+        if not history or history[-1]["date"] != today:
+            history.append({"date": today, "solved": today_count})
+            data[username]["history"] = history
+
+    save_data(data)
+
+if __name__ == "__main__":
+    update_snapshot()
