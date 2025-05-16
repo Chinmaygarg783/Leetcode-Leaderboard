@@ -1,42 +1,66 @@
 import streamlit as st
 import json
-import os
+from datetime import datetime, timedelta
 
-# Initialize users.json if it doesn't exist
-if not os.path.exists("users.json"):
-    with open("users.json", "w") as f:
-        json.dump([], f)  # Create empty list
+DATA_FILE = "data.json"
+POINTS = {"easy": 1, "medium": 3, "hard": 5}
 
-# Load existing users
-with open("users.json", "r") as f:
-    users = json.load(f)
+def load_data():
+    with open(DATA_FILE, "r") as f:
+        return json.load(f)
 
-# Streamlit UI
-st.title("LeetCode User Manager")
+def compute_today_stats(data):
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    yesterday = (datetime.utcnow() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today_stats = {}
 
-# Add User Section
-new_user = st.text_input("Enter LeetCode Username")
-if st.button("Add User") and new_user:
-    if new_user not in users:
-        users.append(new_user)
-        with open("users.json", "w") as f:
-            json.dump(users, f)  # Save to file
-        st.success(f"Added {new_user}!")
-        st.rerun()  # Refresh to show changes
-    else:
-        st.error("User already exists!")
+    if today in data and yesterday in data:
+        for user in data[today]:
+            today_stats[user] = {
+                diff: data[today][user][diff] - data[yesterday].get(user, {}).get(diff, 0)
+                for diff in POINTS
+            }
+    return today_stats
 
-# Remove User Section
-if users:
-    st.subheader("Current Users")
-    selected_user = st.selectbox("Select user to remove", users)
-    if st.button("Remove Selected User"):
-        users.remove(selected_user)
-        with open("users.json", "w") as f:
-            json.dump(users, f)
-        st.success(f"Removed {selected_user}!")
-        st.rerun()
+def compute_weekly_stats(data):
+    week_ago = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    week_stats = {}
 
-# Display all users
-st.write("## All Tracked Users")
-st.json(users)
+    for date in data:
+        if week_ago <= date <= today:
+            for user in data[date]:
+                if user not in week_stats:
+                    week_stats[user] = {k: 0 for k in POINTS}
+                for diff in POINTS:
+                    week_stats[user][diff] += data[date][user][diff]
+    return week_stats
+
+def calculate_points(stats):
+    return {
+        user: sum(count * POINTS[diff] for diff, count in stat.items())
+        for user, stat in stats.items()
+    }
+
+data = load_data()
+today_stats = compute_today_stats(data)
+weekly_stats = compute_weekly_stats(data)
+
+today_points = calculate_points(today_stats)
+weekly_points = calculate_points(weekly_stats)
+
+st.title("📊 LeetCode Leaderboard")
+
+st.header("🏆 Today's Ranking")
+today_sorted = sorted(today_points.items(), key=lambda x: x[1], reverse=True)
+for i, (user, points) in enumerate(today_sorted, 1):
+    st.write(f"**{i}. {user}** — {points} pts")
+
+st.header("📈 Weekly Ranking")
+weekly_sorted = sorted(weekly_points.items(), key=lambda x: x[1], reverse=True)
+for i, (user, points) in enumerate(weekly_sorted, 1):
+    st.write(f"**{i}. {user}** — {points} pts")
+
+st.header("📅 Problems Solved Today")
+for user, stats in today_stats.items():
+    st.write(f"**{user}**: {stats}")
