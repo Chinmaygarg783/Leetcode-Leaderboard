@@ -22,5 +22,22 @@
       "medium": 42,
       "hard": 16
     }
+  },
+  "2025-05-16": {
+    "your_friend1": {
+      "easy": 0,
+      "medium": 0,
+      "hard": 0
+    },
+    "your_friend2": {
+      "easy": 0,
+      "medium": 0,
+      "hard": 0
+    },
+    "your_username": {
+      "easy": 89,
+      "medium": 32,
+      "hard": 0
+    }
   }
 }
